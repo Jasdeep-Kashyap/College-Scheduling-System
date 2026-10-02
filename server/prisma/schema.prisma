@@ -1,0 +1,384 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// ENUMS
+// ----------------------------------------------------
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum CourseType {
+  THEORY
+  LAB
+  TUTORIAL
+  SEMINAR
+}
+
+enum RoomType {
+  LECTURE_HALL
+  COMPUTER_LAB
+  SCIENCE_LAB
+  AUDITORIUM
+  SEMINAR_ROOM
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED_HOLIDAY
+  CANCELLED_EVENT
+  RESCHEDULED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum EngagementType {
+  POLL
+  QUIZ
+  QUESTION
+  INTERACTIVE_EXERCISE
+}
+
+enum ConstraintType {
+  HARD
+  SOFT
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ----------------------------------------------------
+// USER & IDENTITY MODELS
+// ----------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(STUDENT)
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  teacherProfile Teacher?
+  studentProfile Student?
+
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  code      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teachers Teacher[]
+  batches  Batch[]
+  courses  Course[]
+  rooms    Room[]
+}
+
+model Teacher {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  departmentId  String
+  designation   String?
+  maxWeeklyLoad Int      @default(18)
+  preferences   Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id])
+  sessions   Session[]
+
+  @@index([departmentId])
+}
+
+model Batch {
+  id           String   @id @default(uuid())
+  name         String
+  departmentId String
+  semester     Int      @default(1)
+  size         Int      @default(60)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id])
+  students   Student[]
+  sessions   Session[]
+
+  @@index([departmentId])
+}
+
+model Student {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  batchId    String
+  rollNumber String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch       Batch        @relation(fields: [batchId], references: [id])
+  attendances Attendance[]
+  feedbacks   Feedback[]
+
+  @@index([batchId])
+}
+
+// ----------------------------------------------------
+// INFRASTRUCTURE & ACADEMIC OFFERINGS
+// ----------------------------------------------------
+
+model Course {
+  id           String     @id @default(uuid())
+  name         String
+  code         String     @unique
+  credits      Int        @default(3)
+  weeklyHours  Int        @default(4)
+  type         CourseType @default(THEORY)
+  departmentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id])
+  sessions   Session[]
+
+  @@index([departmentId])
+}
+
+model Room {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  capacity     Int      @default(60)
+  type         RoomType @default(LECTURE_HALL)
+  departmentId String?
+  equipment    Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department? @relation(fields: [departmentId], references: [id])
+  sessions   Session[]
+}
+
+model TimeSlot {
+  id                String   @id @default(uuid())
+  dayOfWeek         Int
+  slotNumber        Int
+  startTime         String
+  endTime           String
+  isBreak           Boolean  @default(false)
+  desirabilityScore Float    @default(3.0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sessions Session[]
+
+  @@unique([dayOfWeek, slotNumber])
+  @@index([dayOfWeek])
+}
+
+// ----------------------------------------------------
+// CALENDAR, HOLIDAYS & EVENTS
+// ----------------------------------------------------
+
+model AcademicCalendar {
+  id           String   @id @default(uuid())
+  academicYear String
+  semester     Int
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  name        String
+  date        DateTime
+  description String?
+  isGazetted  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([date])
+  @@index([date])
+}
+
+model Event {
+  id              String   @id @default(uuid())
+  name            String
+  startDate       DateTime
+  endDate         DateTime
+  affectedBatches Json?
+  blocksSchedule  Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  @@index([startDate, endDate])
+}
+
+// ----------------------------------------------------
+// SCHEDULES & SESSIONS
+// ----------------------------------------------------
+
+model Schedule {
+  id           String         @id @default(uuid())
+  name         String
+  month        Int
+  year         Int
+  version      Int            @default(1)
+  status       ScheduleStatus @default(DRAFT)
+  fairnessGini Float?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  sessions Session[]
+
+  @@unique([month, year, version])
+  @@index([month, year])
+}
+
+model Session {
+  id         String        @id @default(uuid())
+  scheduleId String
+  courseId   String
+  teacherId  String
+  batchId    String
+  roomId     String
+  timeSlotId String
+  date       DateTime
+  status     SessionStatus @default(SCHEDULED)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  schedule     Schedule          @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  course       Course            @relation(fields: [courseId], references: [id])
+  teacher      Teacher           @relation(fields: [teacherId], references: [id])
+  batch        Batch             @relation(fields: [batchId], references: [id])
+  room         Room              @relation(fields: [roomId], references: [id])
+  timeSlot     TimeSlot          @relation(fields: [timeSlotId], references: [id])
+  attendances  Attendance[]
+  engagements  Engagement[]
+  feedbacks    Feedback[]
+  productivity ProductivityScore?
+
+  @@index([date, roomId])
+  @@index([date, teacherId])
+  @@index([date, batchId])
+  @@index([scheduleId])
+}
+
+// ----------------------------------------------------
+// ATTENDANCE, ENGAGEMENT & PRODUCTIVITY
+// ----------------------------------------------------
+
+model Attendance {
+  id        String           @id @default(uuid())
+  sessionId String
+  studentId String
+  status    AttendanceStatus @default(ABSENT)
+  markedVia String?
+  markedAt  DateTime         @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+}
+
+model Engagement {
+  id          String         @id @default(uuid())
+  sessionId   String
+  type        EngagementType @default(POLL)
+  totalPrompt String?
+  score       Float
+  createdAt   DateTime       @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  sessionId String
+  studentId String
+  rating    Int
+  tags      Json?
+  comment   String?
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@index([sessionId])
+}
+
+model ProductivityScore {
+  id              String   @id @default(uuid())
+  sessionId       String   @unique
+  attendanceRate  Float
+  engagementScore Float
+  learningScore   Float
+  feedbackScore   Float
+  compositeScore  Float
+  computedAt      DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// SOLVER CONSTRAINTS
+// ----------------------------------------------------
+
+model Constraint {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  type        ConstraintType @default(HARD)
+  description String?
+  weight      Float          @default(1.0)
+  parameters  Json?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
