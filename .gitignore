@@ -3,4 +3,3 @@ node_modules/
 .pgdata/
 dist/
 models/*.joblib
-documentation/
