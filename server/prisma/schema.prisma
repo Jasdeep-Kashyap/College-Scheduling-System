@@ -145,6 +145,7 @@ model Batch {
   students   Student[]
   sessions   Session[]
 
+  @@unique([name, departmentId])
   @@index([departmentId])
 }
 

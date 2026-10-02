@@ -135,12 +135,20 @@ export const generateTimetable = async (req: Request, res: Response): Promise<vo
       data: { status: 'ARCHIVED' },
     });
 
+    // Determine next version number to avoid unique constraint on (month, year, version)
+    const latestSchedule = await prisma.schedule.findFirst({
+      where: { month, year },
+      orderBy: { version: 'desc' },
+    });
+    const nextVersion = (latestSchedule?.version ?? 0) + 1;
+
     // Create new schedule
     const schedule = await prisma.schedule.create({
       data: {
-        name: `CSE - ${new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}`,
+        name: `CSE - ${new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })} v${nextVersion}`,
         month,
         year,
+        version: nextVersion,
         status: 'DRAFT',
         fairnessGini: mlResult.fairnessGini,
       },
